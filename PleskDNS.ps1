@@ -51,7 +51,12 @@ function Add-DnsTxt {
         Adds a TXT record for the specified zone with the specified name and value.
     #>
 
-    try { $headers = New-PleskHeaders @PSBoundParameters } catch { throw }
+    try { 
+        $tokenParams = @{}
+        if ($PSBoundParameters.ContainsKey('PleskToken'))         { $tokenParams.PleskToken         = $PleskToken }
+        if ($PSBoundParameters.ContainsKey('PleskTokenInsecure')) { $tokenParams.PleskTokenInsecure = $PleskTokenInsecure }
+        $headers = Get-PleskHeaders @tokenParams
+    } catch { throw }
 
     try { $rec = Get-PleskDnsTxtRecord $RecordName $TxtValue -PleskUrl $PleskUrl -Headers $headers } catch { throw }
     if ($rec) {
@@ -120,7 +125,12 @@ function Remove-DnsTxt {
         Removes a TXT record for the specified zone with the specified name and value.
     #>
 
-    try { $headers = New-PleskHeaders @PSBoundParameters } catch { throw }
+    try { 
+        $tokenParams = @{}
+        if ($PSBoundParameters.ContainsKey('PleskToken'))         { $tokenParams.PleskToken         = $PleskToken }
+        if ($PSBoundParameters.ContainsKey('PleskTokenInsecure')) { $tokenParams.PleskTokenInsecure = $PleskTokenInsecure }
+        $headers = Get-PleskHeaders @tokenParams
+    } catch { throw }
 
     try {$recordsToDelete = Get-PleskDnsTxtRecord $RecordName $TxtValue -PleskUrl $PleskUrl -Headers $headers} catch { throw }
     if ($recordsToDelete.Count -eq 0) {
@@ -241,10 +251,12 @@ function Get-PleskDnsTxtRecord {
 
 function Get-PleskHeaders {
     param(
-        [Parameter(ParameterSetName='Secure',Mandatory,Position=1)]
+        [Parameter(ParameterSetName='Secure',Mandatory,Position=0)]
         [securestring]$PleskToken,
-        [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory,Position=1)]
-        [string]$PleskTokenInsecure
+        [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory,Position=0)]
+        [string]$PleskTokenInsecure,
+        [Parameter(ValueFromRemainingArguments)]
+        $ExtraParams
     )
 
     if ('Secure' -eq $PSCmdlet.ParameterSetName) {
