@@ -10,8 +10,10 @@ function Add-DnsTxt {
         [Parameter(Mandatory)]
         [string]$PleskUrl,
         [Parameter(ParameterSetName='Secure',Mandatory)]
+        [AllowNull()]
         [securestring]$PleskToken,
         [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory)]
+        [AllowEmptyString()]
         [string]$PleskTokenInsecure,
         [int]$Ttl=1800,
         [Parameter(ValueFromRemainingArguments)]
@@ -49,18 +51,15 @@ function Add-DnsTxt {
         Adds a TXT record for the specified zone with the specified name and value.
     #>
 
-    if ('Secure' -eq $PSCmdlet.ParameterSetName) {
-        $PleskTokenInsecure = [pscredential]::new('a',$PleskToken).GetNetworkCredential().Password
-    }
-    $headers = @{ 'X-API-Key' = $PleskTokenInsecure }
+    try { $headers = New-PleskHeaders @PSBoundParameters } catch { throw }
 
-    try { $rec = Get-PleskDnsTxtRecord $RecordName $TxtValue -PleskUrl $PleskUrl -PleskToken $PleskToken } catch { throw }
+    try { $rec = Get-PleskDnsTxtRecord $RecordName $TxtValue -PleskUrl $PleskUrl -Headers $headers } catch { throw }
     if ($rec) {
         Write-Verbose "Record $RecordName already contains $TxtValue. Nothing to do."
         return
     }
 
-    $pleskZone = Find-PleskDnsZone $RecordName -PleskUrl $PleskUrl -PleskToken $PleskToken
+    $pleskZone = Find-PleskDnsZone $RecordName -PleskUrl $PleskUrl -Headers $headers
 
     $url = "{0}/api/v2/dns/records?domain={1}" -f $PleskUrl.TrimEnd('/'), $pleskZone
     $body = @{
@@ -85,8 +84,10 @@ function Remove-DnsTxt {
         [Parameter(Mandatory)]
         [string]$PleskUrl,
         [Parameter(ParameterSetName='Secure',Mandatory)]
+        [AllowNull()]
         [securestring]$PleskToken,
         [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory)]
+        [AllowEmptyString()]
         [string]$PleskTokenInsecure,
         [Parameter(ValueFromRemainingArguments)]
         $ExtraParams
@@ -119,12 +120,9 @@ function Remove-DnsTxt {
         Removes a TXT record for the specified zone with the specified name and value.
     #>
 
-    if ('Secure' -eq $PSCmdlet.ParameterSetName) {
-        $PleskTokenInsecure = [pscredential]::new('a',$PleskToken).GetNetworkCredential().Password
-    }
-    $headers = @{ 'X-API-Key' = $PleskTokenInsecure }
+    try { $headers = New-PleskHeaders @PSBoundParameters } catch { throw }
 
-    try {$recordsToDelete = Get-PleskTxtRecord $RecordName $TxtValue -PleskUrl $PleskUrl -PleskToken $PleskToken} catch { throw }
+    try {$recordsToDelete = Get-PleskDnsTxtRecord $RecordName $TxtValue -PleskUrl $PleskUrl -Headers $headers} catch { throw }
     if ($recordsToDelete.Count -eq 0) {
       Write-Verbose "No record $RecordName with value $TxtValue exists. Nothing to do."
       return
@@ -175,10 +173,8 @@ function Find-PleskDnsZone {
         [string]$RecordName,
         [Parameter(Mandatory)]
         [string]$PleskUrl,
-        [Parameter(ParameterSetName='Secure',Mandatory)]
-        [securestring]$PleskToken,
-        [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory)]
-        [string]$PleskTokenInsecure
+        [Parameter(Mandatory,Position=1)]
+        [hashtable]$headers
     )
 
     # setup a module variable to cache the record to zone ID mapping
@@ -189,11 +185,6 @@ function Find-PleskDnsZone {
     if ($script:PleskDnsRecordZones.ContainsKey($RecordName)) {
         return $script:PleskDnsRecordZones.$RecordName
     }
-
-    if ('Secure' -eq $PSCmdlet.ParameterSetName) {
-        $PleskTokenInsecure = [pscredential]::new('a',$PleskToken).GetNetworkCredential().Password
-    }
-    $headers = @{ 'X-API-Key' = $PleskTokenInsecure }
 
     # Search for the zone from longest to shortest set of FQDN pieces.
     $pieces = $RecordName.Split('.')
@@ -209,14 +200,13 @@ function Find-PleskDnsZone {
           $script:PleskDnsRecordZones.$RecordName = $zoneTest
           return $zoneTest
         } catch {
-          Write-Debug "No zone found for $zoneTest"
+          Write-Debug "No zone found for $zoneTest with url $url"
           continue
         }
     }
 
     throw "No zone found for $RecordName"
 }
-
 
 function Get-PleskDnsTxtRecord {
     [CmdletBinding()]
@@ -227,48 +217,11 @@ function Get-PleskDnsTxtRecord {
         [string]$TxtValue,
         [Parameter(Mandatory)]
         [string]$PleskUrl,
-        [Parameter(ParameterSetName='Secure',Mandatory)]
-        [securestring]$PleskToken,
-        [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory)]
-        [string]$PleskTokenInsecure,
-        [Parameter(ValueFromRemainingArguments)]
-        $ExtraParams
+        [Parameter(Mandatory,Position=2)]
+        [hashtable]$headers
     )
 
-    <#
-    .SYNOPSIS
-        Finds a DNS TXT record in Plesk
-
-    .DESCRIPTION
-        Finds a DNS TXT record in Plesk
-
-    .PARAMETER RecordName
-        The fully qualified name of the TXT record.
-
-    .PARAMETER TxtValue
-        The value of the TXT record.
-
-    .PARAMETER PleskUrl
-        The Plesk base url
-
-    .PARAMETER PleskToken
-        The Plesk API key
-
-    .PARAMETER ExtraParams
-        This parameter can be ignored and is only used to prevent errors when splatting with more parameters than this function supports.
-
-    .EXAMPLE
-        Get-PleskDnsTxtRecord '_acme-challenge.example.com' 'txt-value' -PleskUrl 'https://plesk01.example.com:8443' -PleskToken (ConvertTo-SecureString '78711059-23bb-cf6f-b07f-985e1995d2e2' -AsPlainText)
-
-        Returns an array of TXT records for the specified zone with the specified name and value.
-    #>
-  
-    if ('Secure' -eq $PSCmdlet.ParameterSetName) {
-        $PleskTokenInsecure = [pscredential]::new('a',$PleskToken).GetNetworkCredential().Password
-    }
-    $headers = @{ 'X-API-Key' = $PleskTokenInsecure }
-
-    $pleskZone = Find-PleskDnsZone $RecordName -PleskUrl $PleskUrl -PleskToken $PleskToken
+    $pleskZone = Find-PleskDnsZone $RecordName -PleskUrl $PleskUrl -Headers $headers
 
     $url = "{0}/api/v2/dns/records?domain={1}" -f $PleskUrl.TrimEnd('/'), $pleskZone
 
@@ -277,11 +230,26 @@ function Get-PleskDnsTxtRecord {
 
     $matches = $records | Where-Object {
       $_.type -eq 'TXT' -and 
-      $_.host -eq ($RecordName + '.') -and #  -or $_.host -eq $RecordName )
+      $_.host -eq ($RecordName + '.') -and
       $_.value -eq $TxtValue
     }
 
     Write-Verbose ("Found {0} TXT record(s)." -f @($matches).Count)
 
     return ,$matches  # return as array even if 0/1 item
+}
+
+function Get-PleskHeaders {
+    param(
+        [Parameter(ParameterSetName='Secure',Mandatory,Position=1)]
+        [securestring]$PleskToken,
+        [Parameter(ParameterSetName='DeprecatedInsecure',Mandatory,Position=1)]
+        [string]$PleskTokenInsecure
+    )
+
+    if ('Secure' -eq $PSCmdlet.ParameterSetName) {
+        $PleskTokenInsecure = [pscredential]::new('a',$PleskToken).GetNetworkCredential().Password
+    }
+
+    return @{ 'X-API-Key' = $PleskTokenInsecure }
 }
